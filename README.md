@@ -1,6 +1,6 @@
 # fastqtiler
 
-This read quality visualization for Illumina sequencing runs.
+This is a program for read quality visualization of Illumina sequencing runs.
 
 Installation
 ============
