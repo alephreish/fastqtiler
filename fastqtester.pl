@@ -20,10 +20,25 @@ use warnings;
 use POSIX ":sys_wait_h";
 
 my $f = 0.001;
-
 my @fq;
+my @pipe;
 
-open(DATA, sprintf("gzip -cd %s |", join(" ", @ARGV)));
+if    ($ARGV[0] =~ /.gz$/) {
+	@pipe = ("gzip", "-cd");
+}
+elsif ($ARGV[0] =~ /.bz2?$/) {
+	@pipe = ("bzip2", "-cd");
+}
+elsif ($#ARGV > 0) {
+	@pipe = ("cat");
+}
+
+if (@pipe) {
+	open DATA, "-|", @pipe, @ARGV or die "Error: failed to open pipe: $!\n";
+}
+else {
+	open DATA, "<", $ARGV[0] or die "Error: failed to open file: $!\n";;
+}
 
 $fq[$_] = <DATA> foreach (0..3);
 my @parts = split(":", $fq[0]);

@@ -20,37 +20,39 @@ use warnings;
 
 my $verion = "1.1b";
 
-my $help = "illumina_tiles.pl version $verion
+my $help = "fastqtiler.pl version $verion
 Use as:
-  illumina_tiles.pl [options] [files]
+  fastqtiler.pl [parameters] [files]
 
-  Mandatory options:
-	-k, --kit : sequencing kit/flowcell type
-	            Supported are:
-	              hiseq2000/2500:high-output
-	              hiseq2000/2500:rapid-run
-	              hiseq3000/4000
-	              hiseqX
-	              miseq
-	              miseq:micro
-	              miseq:nano
-	              nextseq:high-output
-	              nextseq:mid-output
+  Mandatory parameters:
+    -k, --kit : sequencing kit/flowcell type (see below)
 
-  Optional arguments:
-	-n, --name      : name for output files            [default: tiles]
-	-o, --outdir    : output directory                 [default: .]
-	-t, --threads   : name for output files            [default: none]
-	-l, --len       : read length                      [default: take from the first read]
-	-f, --frac      : fraction of the reads to analyze [default: 0.01]
-	-s, --scale     : scale factor (pixel size in FC units) [default: 1000]
-	-g, --goodcolor : color for the high-quality bases [default: magenta]
-	-b, --badcolor  : color for the low-quality bases  [default: green]
-	    --lanemin   : lane number reads start at       [default: 1]
-	    --lanemax   : lane number reads end   at       [default: kit-specific]
+  Optional parameters:
+    -n, --name      : name for output files            [default: tiles]
+    -o, --outdir    : output directory                 [default: .]
+    -t, --threads   : max number of threads            [default: none]
+    -l, --len       : read length                      [default: taken from the first read]
+    -f, --frac      : fraction of the reads to analyze [default: 0.01]
+    -s, --scale     : scale factor (pixel size in FC units) [default: 1000]
+    -g, --goodcolor : color for the high-quality bases [default: magenta]
+    -b, --badcolor  : color for the low-quality bases  [default: green]
+    -i, --lanemin   : lane number reads start at       [default: 1]
+    -j, --lanemax   : lane number reads end   at       [default: kit-specific]
+    -h/-v, --help/--version : print this short manual
 
   Files:
 	either gzipped, bzipped or raw fastq, but not a mix of different types
+
+  Supported kit types (case-insensitive):
+    hiseq2000/2500:high-output = hiseq2000:high-output, hiseq2500:high-output, hs2000:ho, hs2500:ho
+    hiseq2000/2500:rapid-run   = hiseq2000:rapid-run, hiseq2500:rapid-run, hs2000:rr, hs2500:rr
+    hiseq3000/4000             = hiseq3000, hiseq4000, hs3000, hs4000
+    hiseqX                     = hsX
+    miseq                      = ms
+    miseq:micro                = ms:micro
+    miseq:nano                 = ms:nano
+    nextseq500/550:high-output = nextseq500:high-output, nextseq550:high-output, ns500:ho, ns550:ho
+    nextseq500/550:mid-output  = nextseq500:mid-output, nextseq550:mid-output, ns500:mo, ns550:mo
 ";
 print(STDERR $help) && exit if !@ARGV;
 
@@ -79,8 +81,8 @@ GetOptions (
 	"f=f" => \$frac,      "frac=f"      => \$frac,
 	"g=s" => \$goodcolor, "goodcolor=s" => \$goodcolor,
 	"b=s" => \$badcolor,  "badcolor=s"  => \$badcolor,
-	"lanemax=i" => \$lanemax,
-	"lanemin=i" => \$lanemin,
+	"i=i" => \$lanemax,   "lanemax=i"   => \$lanemax,
+	"j=i" => \$lanemin,   "lanemin=i"   => \$lanemin,
 	"h" => \$h, "v" => \$h, "version" => \$h, "help" => \$h,
 ) || exit 0;
 
@@ -97,39 +99,70 @@ use File::Path qw/make_path/;
 
 my ($bot, $nswaths, $nlanes, $ncameras, $ntiles, $max, $may);
 
-if    ($kit eq "hiseq2000/2500:high-output") {
+$kit = lc($kit);
+
+my %hs2000_ho = (
+	'hiseq2000/2500:high-output' => 1,
+	'hiseq2000:high-output' => 1, 'hiseq2500:high-output' => 1,
+	'hs2000:ho'             => 1, 'hs2500:ho'             => 1);
+my %hs2000_rr = (
+	'hiseq2000/2500:rapid-run' => 1,
+	'hiseq2000:rapid-run' => 1,   'hiseq2500:rapid-run' => 1,
+	'hs2000:rr'           => 1,   'hs2500:rr'           => 1);
+my %hs3000    = (
+	'hiseq3000/4000' => 1,
+	'hiseq3000'   => 1, 'hiseq4000' => 1,
+	'hs3000'      => 1, 'hs4000'    => 1);
+my %hsX       = (
+	'hiseqx'      => 1, 'hsx'       => 1);
+my %ms        = (
+	'miseq'       => 1, 'ms'        => 1);
+my %ms_micro  = (
+	'miseq:micro' => 1, 'ms:micro'  => 1);
+my %ms_nano   = (
+	'miseq:nano'  => 1, 'ms:nano'   => 1);
+my %ns500_ho  = (
+	'nextseq500/550:high-output' => 1,
+	'nextseq500:high-output' => 1, 'nextseq550:high-output' => 1,
+	'ns500:ho'               => 1, 'ns550:ho'               => 1);
+my %ns500_mo  = (
+	'nextseq500/550:mid-output' => 1,
+	'nextseq500:mid-output'  => 1, 'nextseq550:mid-output'  => 1,
+	'ns500:mo'               => 1, 'ns550:mo'               => 1);
+	
+if (exists $hs2000_ho{$kit}) {
 	$bot = 1; $nswaths = 3; $nlanes = 8; $ncameras = 1; $ntiles = 16;
 	$max = 30000; $may = 110000;
 }
-elsif ($kit eq "hiseq2000/2500:rapid-run") {
+elsif (exists $hs2000_rr{$kit}) {
 	$bot = 1; $nswaths = 2; $nlanes = 8; $ncameras = 1; $ntiles = 16;
 	$max = 30000; $may = 110000;
 }
-elsif ($kit eq "hiseq3000/4000") {
+elsif (exists $hs3000{$kit}) {
 	$bot = 1; $nswaths = 2; $nlanes = 8; $ncameras = 1; $ntiles = 28;
 	$max = 30000; $may = 110000; # not verified
 }
-elsif ($kit eq "hiseqX") {
+elsif (exists $hsX{$kit}) {
 	$bot = 1; $nswaths = 2; $nlanes = 8; $ncameras = 1; $ntiles = 24;
 	$max = 30000; $may = 110000; # not verified
 }
-elsif ($kit eq "miseq") {
+elsif (exists $ms{$kit}) {
 	$bot = 1; $nswaths = 1; $nlanes = 1; $ncameras = 1; $ntiles = 14;
 	$max = 30000; $may = 30000;
 }
-elsif ($kit eq "miseq:micro") {
+elsif (exists $ms_micro{$kit}) {
 	$bot = 1; $nswaths = 1; $nlanes = 1; $ncameras = 1; $ntiles = 4;
 	$max = 30000; $may = 30000;
 }
-elsif ($kit eq "miseq:nano") {
+elsif (exists $ms_nano{$kit}) {
 	$bot = 0; $nswaths = 1; $nlanes = 1; $ncameras = 1; $ntiles = 2;
 	$max = 30000; $may = 30000;
 }
-elsif ($kit eq "nextseq:high-output") {
+elsif (exists $ns500_ho{$kit}) {
 	$bot = 1; $nswaths = 3; $nlanes = 4; $ncameras = 3; $ntiles = 12;
 	$max = 30000; $may = 30000;
 }
-elsif ($kit eq "nextseq:mid-output") {
+elsif (exists $ns500_mo{$kit}) {
 	$bot = 1; $nswaths = 1; $nlanes = 4; $ncameras = 3; $ntiles = 12;
 	$max = 30000; $may = 30000;
 }
@@ -137,10 +170,11 @@ else {
 	die "Error: kit '$kit' unrecognized\n";
 }
 
-if (!defined($lanemax) || $lanemax > $nlanes) {
+if (!defined($lanemax)) {
 	$lanemax = $nlanes;
 }
 
+die("Error: incorrect ending lane number: $lanemax > $nlanes\n")    if $lanemax > $nlanes;
 die("Error: incorrect starting lane number: $lanemin > $lanemax\n") if $lanemin > $lanemax;
 die("Couldn't create the '$outdir/png_$name' folder: $!\n") if ! -d "$outdir/png_$name" && !make_path("$outdir/png_$name");
 die("Couldn't create the '$outdir/txt_$name' folder: $!\n") if ! -d "$outdir/txt_$name" && !make_path("$outdir/txt_$name");
@@ -308,8 +342,8 @@ sub do_job {
 	while (<STDIN>) {
 		chomp;
 		@p = split(/[: ]/);
-		$px = sprintf("%d", $offsetx + $p[0] / $scale);
-		$py = sprintf("%d", $offsety + $p[1] / $scale);
+		$px = sprintf('%d', $offsetx + $p[0] / $scale);
+		$py = sprintf('%d', $offsety + $p[1] / $scale);
 		next if $px > $width || $py > $height || $px < 1 || $py < 1;
 		push(@{$quals{$px}{$py}}, $p[-1]);
 	}
@@ -342,7 +376,7 @@ sub do_job {
 		seek(FP, 0, SEEK_END) || die "Error: cannot seek: $!\n";
 		foreach $px (keys %mysum) {
 			foreach $py (keys %{$mysum{$px}}) {
-				$avg = sprintf("%d", ($mysum{$px}{$py} / $mynum{$px}{$py} - 33) / 41 * 255);
+				$avg = sprintf('%d', ($mysum{$px}{$py} / $mynum{$px}{$py} - 33) / 41 * 255);
 				die "Error: unexpected average quality: $avg\n" if $avg > 255 || $avg < 0;
 				printf FP "%d,%d:(%s)\n", $px, $py, $colors[$avg];
 			}
@@ -536,9 +570,9 @@ $(function () {
 	            base.$originalHeader.after(base.$clonedHeader);
 
 	            base.$printStyle = $('<style type="text/css" media="print">' +
-	                '.tableFloatingHeader{display:none !important;}' +
-	                '.tableFloatingHeaderOriginal{position:static !important;}' +
-	                '</style>');
+      '.tableFloatingHeader{display:none !important;}' +
+      '.tableFloatingHeaderOriginal{position:static !important;}' +
+      '</style>');
 	            $('head').append(base.$printStyle);
 	        });
 
@@ -592,41 +626,41 @@ $(function () {
 	    base.toggleHeaders = function () {
 	        if (base.$el) {
 	            base.$el.each(function () {
-	                var $this = $(this),
-	                    newLeft,
-	                    newTopOffset = base.isWindowScrolling ? (
-	                    isNaN(base.options.fixedOffset) ? base.options.fixedOffset.outerHeight() : base.options.fixedOffset) : base.$scrollableArea.offset().top + (!isNaN(base.options.fixedOffset) ? base.options.fixedOffset : 0),
-	                    offset = $this.offset(),
+      var $this = $(this),
+          newLeft,
+          newTopOffset = base.isWindowScrolling ? (
+          isNaN(base.options.fixedOffset) ? base.options.fixedOffset.outerHeight() : base.options.fixedOffset) : base.$scrollableArea.offset().top + (!isNaN(base.options.fixedOffset) ? base.options.fixedOffset : 0),
+          offset = $this.offset(),
 
-	                    scrollTop = base.$scrollableArea.scrollTop() + newTopOffset,
-	                    scrollLeft = base.$scrollableArea.scrollLeft(),
+          scrollTop = base.$scrollableArea.scrollTop() + newTopOffset,
+          scrollLeft = base.$scrollableArea.scrollLeft(),
 
-	                    scrolledPastTop = base.isWindowScrolling ? scrollTop > offset.top : newTopOffset > offset.top,
-	                    notScrolledPastBottom = (base.isWindowScrolling ? scrollTop : 0) < (offset.top + $this.height() - base.$clonedHeader.height() - (base.isWindowScrolling ? 0 : newTopOffset));
+          scrolledPastTop = base.isWindowScrolling ? scrollTop > offset.top : newTopOffset > offset.top,
+          notScrolledPastBottom = (base.isWindowScrolling ? scrollTop : 0) < (offset.top + $this.height() - base.$clonedHeader.height() - (base.isWindowScrolling ? 0 : newTopOffset));
 
-	                if (scrolledPastTop && notScrolledPastBottom) {
-	                    newLeft = offset.left - scrollLeft + base.options.leftOffset;
-	                    base.$originalHeader.css({
-	                        'position': 'fixed',
-	                            'margin-top': base.options.marginTop,
-	                            'left': newLeft,
-	                            'z-index': 3 // #18: opacity bug
-	                    });
-	                    base.leftOffset = newLeft;
-	                    base.topOffset = newTopOffset;
-	                    base.$clonedHeader.css('display', '');
-	                    if (!base.isSticky) {
-	                        base.isSticky = true;
-	                        // make sure the width is correct: the user might have resized the browser while in static mode
-	                        base.updateWidth();
-	                    }
-	                    base.setPositionValues();
-	                } else if (base.isSticky) {
-	                    base.$originalHeader.css('position', 'static');
-	                    base.$clonedHeader.css('display', 'none');
-	                    base.isSticky = false;
-	                    base.resetWidth($('td,th', base.$clonedHeader), $('td,th', base.$originalHeader));
-	                }
+      if (scrolledPastTop && notScrolledPastBottom) {
+          newLeft = offset.left - scrollLeft + base.options.leftOffset;
+          base.$originalHeader.css({
+              'position': 'fixed',
+                  'margin-top': base.options.marginTop,
+                  'left': newLeft,
+                  'z-index': 3 // #18: opacity bug
+          });
+          base.leftOffset = newLeft;
+          base.topOffset = newTopOffset;
+          base.$clonedHeader.css('display', '');
+          if (!base.isSticky) {
+              base.isSticky = true;
+              // make sure the width is correct: the user might have resized the browser while in static mode
+              base.updateWidth();
+          }
+          base.setPositionValues();
+      } else if (base.isSticky) {
+          base.$originalHeader.css('position', 'static');
+          base.$clonedHeader.css('display', 'none');
+          base.isSticky = false;
+          base.resetWidth($('td,th', base.$clonedHeader), $('td,th', base.$originalHeader));
+      }
 	            });
 	        }
 	    };
@@ -639,7 +673,7 @@ $(function () {
 	        }
 	        base.$originalHeader.css({
 	            'top': base.topOffset - (base.isWindowScrolling ? 0 : winScrollTop),
-	                'left': base.leftOffset - (base.isWindowScrolling ? 0 : winScrollLeft)
+      'left': base.leftOffset - (base.isWindowScrolling ? 0 : winScrollLeft)
 	        });
 	    };
 
@@ -667,23 +701,23 @@ $(function () {
 	            var width, $this = $(this);
 
 	            if ($this.css('box-sizing') === 'border-box') {
-	                width = $this[0].getBoundingClientRect().width; // #39: border-box bug
+      width = $this[0].getBoundingClientRect().width; // #39: border-box bug
 	            } else {
-	                var $origTh = $('th', base.$originalHeader);
-	                if ($origTh.css('border-collapse') === 'collapse') {
-	                    if (window.getComputedStyle) {
-	                        width = parseFloat(window.getComputedStyle(this, null).width);
-	                    } else {
-	                        // ie8 only
-	                        var leftPadding = parseFloat($this.css('padding-left'));
-	                        var rightPadding = parseFloat($this.css('padding-right'));
-	                        // Needs more investigation - this is assuming constant border around this cell and it's neighbours.
-	                        var border = parseFloat($this.css('border-width'));
-	                        width = $this.outerWidth() - leftPadding - rightPadding - border;
-	                    }
-	                } else {
-	                    width = $this.width();
-	                }
+      var $origTh = $('th', base.$originalHeader);
+      if ($origTh.css('border-collapse') === 'collapse') {
+          if (window.getComputedStyle) {
+              width = parseFloat(window.getComputedStyle(this, null).width);
+          } else {
+              // ie8 only
+              var leftPadding = parseFloat($this.css('padding-left'));
+              var rightPadding = parseFloat($this.css('padding-right'));
+              // Needs more investigation - this is assuming constant border around this cell and it's neighbours.
+              var border = parseFloat($this.css('border-width'));
+              width = $this.outerWidth() - leftPadding - rightPadding - border;
+          }
+      } else {
+          width = $this.width();
+      }
 	            }
 
 	            widths[index] = width;
@@ -695,8 +729,8 @@ $(function () {
 	        $clonedHeaders.each(function (index) {
 	            var width = widths[index];
 	            $origHeaders.eq(index).css({
-	                'min-width': width,
-	                    'max-width': width
+      'min-width': width,
+          'max-width': width
 	            });
 	        });
 	    };
@@ -705,8 +739,8 @@ $(function () {
 	        $clonedHeaders.each(function (index) {
 	            var $this = $(this);
 	            $origHeaders.eq(index).css({
-	                'min-width': $this.css('min-width'),
-	                    'max-width': $this.css('max-width')
+      'min-width': $this.css('min-width'),
+          'max-width': $this.css('max-width')
 	            });
 	        });
 	    };
@@ -737,9 +771,9 @@ $(function () {
 	        var instance = $.data(this, 'plugin_' + name);
 	        if (instance) {
 	            if (typeof options === 'string') {
-	                instance[options].apply(instance);
+      instance[options].apply(instance);
 	            } else {
-	                instance.updateOptions(options);
+      instance.updateOptions(options);
 	            }
 	        } else if (options !== 'destroy') {
 	            $.data(this, 'plugin_' + name, new Plugin(this, options));
