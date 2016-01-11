@@ -23,6 +23,17 @@ my $f = 0.001;
 my @fq;
 my @pipe;
 
+if (!@ARGV) {
+	print STDERR "Error: no input specified\ntry fastqtester.pl -h\n";
+	exit;
+}
+
+if ($ARGV[0] eq '-h' || $ARGV[0] eq '-help' || $ARGV[0] eq '--help' || $ARGV[0] eq '-v' || $ARGV[0] eq '-version' || $ARGV[0] eq '--version') {
+	print STDERR "Use this program as follows: fastqtester.pl <input files>
+	the input files must belong to the same run and be in fastq format, optionally gzip'ed or bzip2'ed\n";
+	exit;
+}
+
 if    ($ARGV[0] =~ /.gz$/) {
 	@pipe = ("gzip", "-cd");
 }
