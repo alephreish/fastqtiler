@@ -18,7 +18,7 @@
 use strict;
 use warnings;
 
-my $verion = "1.1b";
+my $verion = "1.2b";
 
 my $help = "fastqtiler.pl version $verion
 Use as:
@@ -214,7 +214,6 @@ my $cam = $ncameras > 1;
 my $nf = 3 + $cam;
 
 my @fq;
-my @parts;
 my $lane;
 my $tile = -1;
 my $eof = 0;
@@ -223,8 +222,8 @@ $fq[$_] = <DATA> foreach (0..3);
 chomp ($fq[1], $fq[2]);
 $len = length($fq[1]) if !defined($len);
 die "Error: not a valid fastq file\n" if $fq[2] ne "+" || !$fq[0] || substr($fq[0], 0, 1) ne "@";
-@parts = split(":", $fq[0]);
-die "Error: unrecognized fastq header\n" if $#parts < 6;
+my @header_parts = split(":", $fq[0]);
+die "Error: unrecognized fastq header\n" if $#header_parts < 6;
 
 my $head = sprintf("# ImageMagick pixel enumeration: %d,%d,255,srgb\n", $width, $height);
 
@@ -242,7 +241,7 @@ for (my $i = 0; $i < $len; $i++) {
 while (!eof(DATA)) {
 	$fq[$_] = <DATA> foreach (0..3);
 	next if rand() > $frac;
-	@parts = split(":", $fq[0], 6);
+	my @parts = split(":", $fq[0], 6);
 	$lane = $parts[3];
 	next if $lane < $lanemin || $lane > $lanemax;
 	if ($tile != $parts[4]) {
@@ -257,7 +256,7 @@ while (!eof(DATA)) {
 		printf KID "%d:%d\n", $lane, $tile;
 	}
 	chomp $parts[5];
-	printf KID "%s:%s", $parts[5], $fq[3];
+	printf KID "%s %s", $parts[5], $fq[3];
 }
 close(KID);
 close(DATA);
@@ -278,8 +277,8 @@ for (my $i = 0; $i < $len; $i++) {
 #		$pids{$pid} = 1;
 #		next;
 #	}
-	system("convert", fname($i, 1, "txt"), fname($i, 1, "png"));
-	system("convert", fname($i, 2, "txt"), fname($i, 2, "png")) if $bot;
+	system("convert", "-trim", fname($i, 1, "txt"), fname($i, 1, "png"));
+	system("convert", "-trim", fname($i, 2, "txt"), fname($i, 2, "png")) if $bot;
 #	exit;
 }
 
@@ -317,13 +316,11 @@ sub fname {
 sub do_job {
 	my %quals;
 	my @quala;
-	my ($px, $py);
 
 	my $header = <STDIN>;
 	chomp $header;
-	my @p = split(":", $header, 2);
-	my $mylane = $p[0] - $lanemin;
-	my $mytile = $p[1];
+	my ($mylane, $mytile) = split(":", $header);
+	$mylane -= $lanemin;
 	my @f = split("", $mytile, $nf);
 
 	my $surface = $f[0]  - 1;
@@ -341,18 +338,19 @@ sub do_job {
 
 	while (<STDIN>) {
 		chomp;
-		@p = split(/[: ]/);
-		$px = sprintf('%d', $offsetx + $p[0] / $scale);
-		$py = sprintf('%d', $offsety + $p[1] / $scale);
+		my ($px0, $py0) = split(/[: ]/);
+		my $px = sprintf('%d', $offsetx + $px0 / $scale);
+		my $py = sprintf('%d', $offsety + $py0 / $scale);
 		next if $px > $width || $py > $height || $px < 1 || $py < 1;
+		my @p = split(/ /);
 		push(@{$quals{$px}{$py}}, $p[-1]);
 	}
 	close(STDIN);
 	my @sum;
 	my @num;
 	my $qual;
-	foreach $px (keys %quals) {
-		foreach $py (keys %{$quals{$px}}) {
+	foreach my $px (keys %quals) {
+		foreach my $py (keys %{$quals{$px}}) {
 			foreach $qual (@{$quals{$px}{$py}}) {
 				my $i = 0;
 				foreach my $q (split("", $qual)) {
@@ -374,8 +372,8 @@ sub do_job {
 		open(FP, ">>", fname($i, $surface + 1, "txt")) || die "Error: failed to open output file: $!\n";
 		flock(FP, LOCK_EX)    || die "Error: cannot lock: $!\n";
 		seek(FP, 0, SEEK_END) || die "Error: cannot seek: $!\n";
-		foreach $px (keys %mysum) {
-			foreach $py (keys %{$mysum{$px}}) {
+		foreach my $px (keys %mysum) {
+			foreach my $py (keys %{$mysum{$px}}) {
 				$avg = sprintf('%d', ($mysum{$px}{$py} / $mynum{$px}{$py} - 33) / 41 * 255);
 				die "Error: unexpected average quality: $avg\n" if $avg > 255 || $avg < 0;
 				printf FP "%d,%d:(%s)\n", $px, $py, $colors[$avg];
@@ -403,15 +401,11 @@ sub pipe_to_fork {
 
 sub get_colors {
 	open(COL, "-|", "convert -size 1x256 'gradient:$badcolor-$goodcolor' -depth 8 -colorspace RGB txt:");
-	my @parts;
-	my $q;
-	my $rgb;
-	my @p;
 	while (<COL>) {
-		@p = split(/:\s*\(|\)/);
+		my @p = split(/:\s*\(|\)/);
 		next if substr($p[0], 0, 1) eq "#";
-		$q   = substr($p[0], 2);
-		$rgb = $p[1];
+		my $q   = substr($p[0], 2);
+		my $rgb = $p[1];
 		$rgb =~ s/\s+//g;
 		$colors[$q] = $rgb;
 	}
