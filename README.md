@@ -67,4 +67,4 @@ Either gzipped, bzipped or raw fastq, but not a mix of different types.
 Output files
 ============
 
-As output you will get a folder with the images corresponding to the quality scores at each one of the sequencing cycles and an html report. Here is how a [good run](http://har-wradim.github.io/fastqtiler/good.html) looks like and here is a [bad one](http://har-wradim.github.io/fastqtiler/bad.html).
+As output you will get a folder with the images corresponding to the quality scores at each one of the sequencing cycles and an html report. Here is how a [good run](http://alephreish.github.io/fastqtiler/good.html) looks like and here is a [bad one](http://alephreish.github.io/fastqtiler/bad.html).
